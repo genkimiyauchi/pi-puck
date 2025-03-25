@@ -1,4 +1,5 @@
 from typing import Optional
+import os
 import sys
 from .epuck import EPuck
 import RPi.GPIO as GPIO
@@ -22,6 +23,19 @@ LEDS_RGB_4 = 9
 LEDS_RGB_6 = 12
 LEDS_RGB_8 = 15
 SETTINGS = 18
+
+# Battery
+EPUCK_BATTERY_PATH = "/sys/bus/i2c/devices/11-0048/iio:device0/in_voltage0_raw"
+EPUCK_BATTERY_PATH_LEGACY = "/sys/bus/i2c/drivers/ads1015/3-0048/in4_input"
+AUX_BATTERY_PATH = "/sys/bus/i2c/devices/11-0048/iio:device0/in_voltage1_raw"
+AUX_BATTERY_PATH_LEGACY = "/sys/bus/i2c/drivers/ads1015/3-0048/in5_input"
+EPUCK_BATTERY_SCALE_PATH = "/sys/bus/i2c/devices/11-0048/iio:device0/in_voltage0_scale"
+AUX_BATTERY_SCALE_PATH = "/sys/bus/i2c/devices/11-0048/iio:device0/in_voltage1_scale"
+LEGACY_BATTERY_SCALE = 1.0
+BATTERY_MIN_VOLTAGE = 3.3
+BATTERY_MAX_VOLTAGE = 4.138
+BATTERY_VOLTAGE_RANGE = BATTERY_MAX_VOLTAGE - BATTERY_MIN_VOLTAGE
+
 
 def int_to_2byte(value):
 	# Ensure the value is within the range [-1024, 1024]
@@ -72,6 +86,29 @@ class EPuck2(EPuck):
 			except:
 				print("Cannot open I2C device")
 				sys.exit(1)
+
+		self.epuck_battery_path = ""
+		self.aux_battery_path = ""
+		self.epuck_scale_path = ""
+		self.aux_scale_path = ""
+		self.scale = 0.0
+		self.voltage = 0.0
+		self.raw_value = 0
+		self.percentage = 0.0
+
+		# Determine actual path to use for ADC driver (try iio, then hwmon)
+		if os.path.exists(EPUCK_BATTERY_PATH):
+			self.epuck_battery_path = EPUCK_BATTERY_PATH
+			self.aux_battery_path = AUX_BATTERY_PATH
+			self.epuck_scale_path = EPUCK_BATTERY_SCALE_PATH
+			self.aux_scale_path = AUX_BATTERY_SCALE_PATH
+		elif os.path.exists(EPUCK_BATTERY_PATH_LEGACY):
+			self.epuck_battery_path = EPUCK_BATTERY_PATH_LEGACY
+			self.aux_battery_path = AUX_BATTERY_PATH_LEGACY
+			self.epuck_scale_path = None
+			self.aux_scale_path = None
+		else:
+			print("Cannot read ADC path")
 
 	def update_robot_sensors_and_actuators(self):
 		checksum = 0
@@ -134,6 +171,43 @@ class EPuck2(EPuck):
 		self.set_left_motor_speed(speed_left)
 		self.set_right_motor_speed(speed_right)
 		self.update_robot_sensors_and_actuators()
+
+	def get_battery(self):
+		# Read e-puck battery
+		if self.epuck_scale_path is not None:
+			with open(self.epuck_scale_path, "r") as scale_file:
+				scale = float(scale_file.read())
+		else:
+			scale = LEGACY_BATTERY_SCALE
+
+		with open(self.epuck_battery_path, "r") as battery_file:
+			raw_value = float(battery_file.read())
+			voltage = round((raw_value * scale) / 500.0, 2)
+
+		percentage = round((voltage - BATTERY_MIN_VOLTAGE) / BATTERY_VOLTAGE_RANGE * 100.0, 2)
+		if percentage < 0.0:
+			percentage = 0.0
+		elif percentage > 100.0:
+			percentage = 100.0
+
+		# Read external battery
+		if self.aux_scale_path is not None:
+			with open(self.aux_scale_path, "r") as scale_file:
+				scale = float(scale_file.read())
+		else:
+			scale = LEGACY_BATTERY_SCALE
+
+		with open(self.aux_battery_path, "r") as battery_file:
+			aux_raw_value = float(battery_file.read())
+			aux_voltage = round((raw_value * scale) / 500.0, 2)	
+
+		aux_percentage = round((voltage - BATTERY_MIN_VOLTAGE) / BATTERY_VOLTAGE_RANGE * 100.0, 2)
+		if aux_percentage < 0.0:
+			aux_percentage = 0.0
+		elif aux_percentage > 100.0:
+			aux_percentage = 100.0
+
+		return percentage, voltage, raw_value, aux_percentage, aux_voltage, aux_raw_value
 
 	# @property
 	# def left_motor_speed(self):
