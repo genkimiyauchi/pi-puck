@@ -15,16 +15,22 @@ SENSORS_SIZE = (46+1) # Data + checksum.
 # Register addresses
 LEFT_MOTOR_SPEED = 0
 RIGHT_MOTOR_SPEED = 2
-
+SPEAKER_SOUND = 4
+LEDS_1357 = 5
+LEDS_RGB_2 = 6
+LEDS_RGB_4 = 9
+LEDS_RGB_6 = 12
+LEDS_RGB_8 = 15
+SETTINGS = 18
 
 def int_to_2byte(value):
-	# Ensure the value is within the range [-512, 512]
-	if not (-512 <= value <= 512):
-		raise ValueError("Value must be between -512 and 512")
+	# Ensure the value is within the range [-1024, 1024]
+	if not (-1024 <= value <= 1024):
+		raise ValueError("Value must be between -1024 and 1024")
 
 	# Convert to a 16-bit signed integer
 	packed_value = struct.pack('<h', value)  # '<h' means little-endian, short (2 bytes)
-	
+
 	# Return the two bytes as a list
 	return list(packed_value)
 
@@ -68,6 +74,11 @@ class EPuck2(EPuck):
 				sys.exit(1)
 
 	def update_robot_sensors_and_actuators(self):
+		checksum = 0
+		for i in range(ACTUATORS_SIZE-1):
+			checksum ^= self.actuators_data[i]
+		self.actuators_data[ACTUATORS_SIZE-1] = checksum
+
 		try:
 			write = i2c_msg.write(ROB_ADDR, self.actuators_data)
 			read = i2c_msg.read(ROB_ADDR, SENSORS_SIZE)
@@ -122,12 +133,6 @@ class EPuck2(EPuck):
 	def set_motor_speeds(self, speed_left, speed_right):
 		self.set_left_motor_speed(speed_left)
 		self.set_right_motor_speed(speed_right)
-
-		checksum = 0
-		for i in range(ACTUATORS_SIZE-1):
-			checksum ^= self.actuators_data[i]		
-		self.actuators_data[ACTUATORS_SIZE-1] = checksum
-		
 		self.update_robot_sensors_and_actuators()
 
 	# @property
@@ -160,6 +165,47 @@ class EPuck2(EPuck):
 	# 	else:
 	# 		data = 0x00
 	# 	self._write_data_8(IR_CONTROL, data)
+
+	def set_speaker_sound(self, sound):
+		if(sound == 0 or sound == 1 or sound == 2):
+			self.actuators_data[SPEAKER_SOUND] = sound
+		else:
+			print('[ERROR]: Speaker input must be [0, 1, 2]')
+
+		self.update_robot_sensors_and_actuators()
+
+	def set_leds(self, led1=0, led3=0, led5=0, led7=0):
+		binary_str = f'{led7}{led5}{led3}{led1}' # Convert input to a string
+		hex_str = f'0x{int(binary_str, 2):X}' # Format as hexadecimal string
+		hex_value = int(hex_str, 16) # Convert string to hex
+		self.actuators_data[LEDS_1357] = hex_value
+		self.update_robot_sensors_and_actuators()
+
+	def set_rgb_led(self, led, color):
+		rgb_led = None
+		if led == 2:
+			rgb_led = LEDS_RGB_2
+		elif led == 4:
+			rgb_led = LEDS_RGB_4
+		elif led == 6:
+			rgb_led = LEDS_RGB_6
+		elif led == 8:
+			rgb_led = LEDS_RGB_8
+
+		for i, c in enumerate(color):
+			# Ensure the value is within the range [0, 100]
+			if not (0 <= c <= 100):
+				raise ValueError("Value must be between 0 and 100")
+
+			self.actuators_data[rgb_led + i] = c
+			self.update_robot_sensors_and_actuators()
+
+	def set_settings(self, bit0, bit1, bit2):
+		binary_str = f'{bit2}{bit1}{bit0}' # Convert input to a string
+		hex_str = f'0x{int(binary_str, 2):X}' # Format as hexadecimal string'
+		hex_value = int(hex_str, 16) # Convert string to hex
+		self.actuators_data[SETTINGS] = hex_value
+		self.update_robot_sensors_and_actuators()
 
 	# def get_ir_reflected(self, sensor):
 	# 	return self._read_data_16(IR_REFLECTED_BASE + sensor)
