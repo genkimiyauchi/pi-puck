@@ -124,36 +124,12 @@ class EPuck2(EPuck):
 		except:
 			sys.exit(1)
 
-	# def set_outer_leds_byte(self, leds):
-	# 	self._write_data_8(OUTER_LEDS, leds)
-
-	# def set_outer_leds(self, led0, led1, led2, led3, led4, led5, led6, led7):
-	# 	data = 0x00
-	# 	if led0:
-	# 		data += 0x01
-	# 	if led1:
-	# 		data += 0x02
-	# 	if led2:
-	# 		data += 0x04
-	# 	if led3:
-	# 		data += 0x08
-	# 	if led4:
-	# 		data += 0x10
-	# 	if led5:
-	# 		data += 0x20
-	# 	if led6:
-	# 		data += 0x40
-	# 	if led7:
-	# 		data += 0x80
-	# 	self.set_outer_leds_byte(data)
-
-	# def set_inner_leds(self, front, body):
-	# 	data = 0x00
-	# 	if front:
-	# 		data += 0x01
-	# 	if body:
-	# 		data += 0x02
-	# 	self._write_data_8(INNER_LEDS, data)
+		# Verify the checksum (Longitudinal Redundancy Check) before interpreting the received sensors data.
+		checksum = 0
+		for i in range(SENSORS_SIZE-1):
+			checksum ^= self.sensors_data[i]
+		if(checksum != self.sensors_data[SENSORS_SIZE-1]):
+			print("wrong checksum ({0:#x} != {0:#x})\r\n".format(self.sensors_data[ACTUATORS_SIZE-1], checksum))
 
 	def set_left_motor_speed(self, speed):
 		# self._write_data_16(LEFT_MOTOR_SPEED, int(speed))
@@ -171,74 +147,6 @@ class EPuck2(EPuck):
 		self.set_left_motor_speed(speed_left)
 		self.set_right_motor_speed(speed_right)
 		self.update_robot_sensors_and_actuators()
-
-	def get_battery(self):
-		# Read e-puck battery
-		if self.epuck_scale_path is not None:
-			with open(self.epuck_scale_path, "r") as scale_file:
-				scale = float(scale_file.read())
-		else:
-			scale = LEGACY_BATTERY_SCALE
-
-		with open(self.epuck_battery_path, "r") as battery_file:
-			raw_value = float(battery_file.read())
-			voltage = round((raw_value * scale) / 500.0, 2)
-
-		percentage = round((voltage - BATTERY_MIN_VOLTAGE) / BATTERY_VOLTAGE_RANGE * 100.0, 2)
-		if percentage < 0.0:
-			percentage = 0.0
-		elif percentage > 100.0:
-			percentage = 100.0
-
-		# Read external battery
-		if self.aux_scale_path is not None:
-			with open(self.aux_scale_path, "r") as scale_file:
-				scale = float(scale_file.read())
-		else:
-			scale = LEGACY_BATTERY_SCALE
-
-		with open(self.aux_battery_path, "r") as battery_file:
-			aux_raw_value = float(battery_file.read())
-			aux_voltage = round((raw_value * scale) / 500.0, 2)	
-
-		aux_percentage = round((voltage - BATTERY_MIN_VOLTAGE) / BATTERY_VOLTAGE_RANGE * 100.0, 2)
-		if aux_percentage < 0.0:
-			aux_percentage = 0.0
-		elif aux_percentage > 100.0:
-			aux_percentage = 100.0
-
-		return percentage, voltage, raw_value, aux_percentage, aux_voltage, aux_raw_value
-
-	# @property
-	# def left_motor_speed(self):
-	# 	return self._read_data_16(LEFT_MOTOR_SPEED)
-
-	# @property
-	# def right_motor_speed(self):
-	# 	return self._read_data_16(RIGHT_MOTOR_SPEED)
-
-	# @property
-	# def motor_speeds(self):
-	# 	return self.left_motor_speed, self.right_motor_speed
-
-	# @property
-	# def left_motor_steps(self):
-	# 	return self._read_data_16(LEFT_MOTOR_STEPS)
-
-	# @property
-	# def right_motor_steps(self):
-	# 	return self._read_data_16(RIGHT_MOTOR_STEPS)
-
-	# @property
-	# def motor_steps(self):
-	# 	return self.left_motor_steps, self.right_motor_steps
-
-	# def enable_ir_sensors(self, enabled):
-	# 	if enabled:
-	# 		data = 0x01
-	# 	else:
-	# 		data = 0x00
-	# 	self._write_data_8(IR_CONTROL, data)
 
 	def set_speaker_sound(self, sound):
 		if(sound == 0 or sound == 1 or sound == 2):
@@ -281,16 +189,83 @@ class EPuck2(EPuck):
 		self.actuators_data[SETTINGS] = hex_value
 		self.update_robot_sensors_and_actuators()
 
-	# def get_ir_reflected(self, sensor):
-	# 	return self._read_data_16(IR_REFLECTED_BASE + sensor)
+	@property
+	def battery(self):
+		# Read e-puck battery
+		if self.epuck_scale_path is not None:
+			with open(self.epuck_scale_path, "r") as scale_file:
+				scale = float(scale_file.read())
+		else:
+			scale = LEGACY_BATTERY_SCALE
 
-	# @property
-	# def ir_reflected(self):
-	# 	return [self.get_ir_reflected(i) for i in range(8)]
+		with open(self.epuck_battery_path, "r") as battery_file:
+			raw_value = float(battery_file.read())
+			voltage = round((raw_value * scale) / 500.0, 2)
 
-	# def get_ir_ambient(self, sensor):
-	# 	return self._read_data_16(IR_AMBIENT_BASE + sensor)
+		percentage = round((voltage - BATTERY_MIN_VOLTAGE) / BATTERY_VOLTAGE_RANGE * 100.0, 2)
+		if percentage < 0.0:
+			percentage = 0.0
+		elif percentage > 100.0:
+			percentage = 100.0
 
-	# @property
-	# def ir_ambient(self):
-	# 	return [self.get_ir_ambient(i) for i in range(8)]
+		# Read external battery
+		if self.aux_scale_path is not None:
+			with open(self.aux_scale_path, "r") as scale_file:
+				scale = float(scale_file.read())
+		else:
+			scale = LEGACY_BATTERY_SCALE
+
+		with open(self.aux_battery_path, "r") as battery_file:
+			aux_raw_value = float(battery_file.read())
+			aux_voltage = round((raw_value * scale) / 500.0, 2)
+
+		aux_percentage = round((voltage - BATTERY_MIN_VOLTAGE) / BATTERY_VOLTAGE_RANGE * 100.0, 2)
+		if aux_percentage < 0.0:
+			aux_percentage = 0.0
+		elif aux_percentage > 100.0:
+			aux_percentage = 100.0
+
+		return percentage, voltage, raw_value, aux_percentage, aux_voltage, aux_raw_value
+
+	@property
+	def ir_reflected(self):
+		self.update_robot_sensors_and_actuators()
+		for i in range(8):
+			self.prox[i] = self.sensors_data[i*2+1]*256+self.sensors_data[i*2]
+		return self.prox
+
+	@property
+	def ir_ambient(self):
+		self.update_robot_sensors_and_actuators()
+		for i in range(8):
+			self.prox_amb[i] = self.sensors_data[16+i*2+1]*256+self.sensors_data[16+i*2]
+		return self.prox_amb
+
+	@property
+	def microphone(self):
+		self.update_robot_sensors_and_actuators()
+		for i in range(4):
+			self.mic[i] = self.sensors_data[32+i*2+1]*256+self.sensors_data[32+i*2]
+		return self.mic
+
+	@property
+	def selector(self):
+		self.update_robot_sensors_and_actuators()
+		return self.sensors_data[40]&0x0F
+
+	@property
+	def button(self):
+		self.update_robot_sensors_and_actuators()
+		return self.sensors_data[40]>>4
+
+	@property
+	def motor_steps(self):
+		self.update_robot_sensors_and_actuators()
+		for i in range(2):
+			self.mot_steps[i] = self.sensors_data[41+i*2+1]*256+self.sensors_data[41+i*2]
+		return self.mot_steps[0], self.mot_steps[1]
+
+	@property
+	def tv_remote(self):
+		self.update_robot_sensors_and_actuators()
+		return self.sensors_data[45]
